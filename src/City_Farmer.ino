@@ -1,9 +1,3 @@
-/******************************************************/
-//       THIS IS A GENERATED FILE - DO NOT EDIT       //
-/******************************************************/
-
-#include "Particle.h"
-#line 1 "c:/Users/edward/Documents/IoT/capstone/City-Farm/City_Farmer/src/City_Farmer.ino"
 /*
  * Project City_Farmer
  * Description:
@@ -16,61 +10,50 @@
 #include "Adafruit_MQTT/Adafruit_MQTT_SPARK.h" 
 #include "credentials.h"
 #include <Wire.h>
-void setup();
-void loop();
-void sendCarbonLevels();
-void sendOzoneLevels();
-void MQTT_connect();
-#line 13 "c:/Users/edward/Documents/IoT/capstone/City-Farm/City_Farmer/src/City_Farmer.ino"
 TCPClient TheClient; 
 Adafruit_MQTT_SPARK mqtt(&TheClient,AIO_SERVER,AIO_SERVERPORT,AIO_USERNAME,AIO_KEY); 
 Adafruit_MQTT_Publish Ozone03PPM = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/Ozone03PPM");
 Adafruit_MQTT_Publish CO2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/CO2PPM");
+Adafruit_MQTT_Publish Batterystate = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/BatteryState");
+Adafruit_MQTT_Publish Batteryvoltage = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/BatteryVolts");
+
+
+
 
 const float argonRes = 4096.0;
 const float argonVolt = 3.3;
 
 unsigned long lastTime, last;
 unsigned long current = millis();
-
-
-
+float getSoC();
+float getVCell();
+FuelGauge fuel;
 SYSTEM_MODE(SEMI_AUTOMATIC);
-void setup()
-{
-  
+
+void setup(){
   Serial.begin(9600);
-  WiFi.connect();
-  while(WiFi.connecting()) {
-    Serial.printf(".");
-  }
-  // initializing i2c
+  Cellular.on();
+  Particle.connect();
   Wire.begin();
   Wire.beginTransmission(0x50);
   Wire.endTransmission(true);
-}
+ 
+  }
 
 void loop(){
-  //pinging MQTT broker every 2 minutes
-   MQTT_connect();
-   if ((millis()-last)>120000) {
-      Serial.printf("Pinging MQTT \n");
-      if(! mqtt.ping()) {
-        Serial.printf("Disconnecting \n");
-        mqtt.disconnect();
-      }
-      last = millis();
-  }
-  // get a reading and publish every hour
-  if((millis()-lastTime) >36000000){ 
-  sendOzoneLevels();
-  sendCarbonLevels();
-  lastTime = millis();
-  }
+  MQTT_connect();
+  pingBroker();
+  getBatteryState();
+  Serial.printf("Battery Voltage %.02f\n",fuel.getVCell());
+  if((millis()-lastTime) >25000){ 
+    sendOzoneLevels();
+    sendCarbonLevels();
+    lastTime = millis();
+    }
+  
 }
 
 void sendCarbonLevels(){
-  // getting mq09 sensor reading
   Wire.beginTransmission(0x51);
   Wire.write(0x00);
   Wire.endTransmission(false);
@@ -84,13 +67,8 @@ void sendCarbonLevels(){
   if(mqtt.Update()) {
     CO2.publish(coPPM);
   }
-  // Serial.printf("raw data %i \n",rawDataCO);
-  // Serial.printf("voltage %.02f \n", volt09);
-  // Serial.printf("rsro %.02f \n",RsRo09);
   Serial.printf("carbon ppm %.02f \n",coPPM);
 }
-
-
 
  void sendOzoneLevels(){
    //getting MQ131 readings 
@@ -107,28 +85,75 @@ void sendCarbonLevels(){
     if(mqtt.Update()){
       Ozone03PPM.publish(ozonePPM);
 }
-// Serial.printf("raw data %i \n",rawDataMQ);
-// Serial.printf("voltage %.02f \n", volt131);
-// Serial.printf("rsro %.02f \n",RsRoM131);
     Serial.printf("ozone ppm %.02f \n",ozonePPM);
  }
- 
 
 void MQTT_connect() {
   int8_t ret;
- 
-  // Stop if already connected.
   if (mqtt.connected()) {
     return;
   }
- 
   Serial.print("Connecting to MQTT... ");
- 
   while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
-       Serial.printf("%s\n",(char *)mqtt.connectErrorString(ret));
-       Serial.printf("Retrying MQTT connection in 5 seconds..\n");
-       mqtt.disconnect();
-       delay(5000);  // wait 5 seconds
+    Serial.printf("%s\n",(char *)mqtt.connectErrorString(ret));
+    Serial.printf("Retrying MQTT connection in 5 seconds..\n");
+    mqtt.disconnect();
+    delay(5000);  // wait 5 seconds
   }
   Serial.printf("MQTT Connected!\n");
+}
+
+void getBatteryState(){
+   enum batteryState {
+    BATTERY_STATE_UNKNOWN = 0,
+    BATTERY_STATE_NOT_CHARGING = 1,
+    BATTERY_STATE_CHARGING = 2,
+    BATTERY_STATE_CHARGED = 3,
+    BATTERY_STATE_DISCHARGING = 4,
+    BATTERY_STATE_FAULT = 5,
+    BATTERY_STATE_DISCONNECTED = 6
+    };
+  int batteryState = System.batteryState();
+  switch(batteryState){
+    case 0:
+    Serial.printf("Battery State Unknown\n");
+    break;
+    case 1:
+    Serial.printf("Battery Not Charging\n");
+    break;
+    case 2:
+    Serial.printf("Battery Charging\n");
+    break;
+    case 3:
+    Serial.printf("Battery Charged\n");
+    break;
+    case 4:
+    Serial.printf("Battery Discharging\n");
+    break;
+    case 5:
+    Serial.printf("Battery Fault\n");
+    break;
+    case 6:
+    Serial.printf("Battery Disconnected\n");
+    break;
+  }
+  if ((millis()-last)>25000) {
+    if(mqtt.Update()){
+      //Batterystate.publish(batteryState);
+      Batteryvoltage.publish(fuel.getVCell());
+      last = millis();
+    }
+  
+  }
+}
+
+void pingBroker(){
+  if ((millis()-last)>120000) {
+      Serial.printf("Pinging MQTT \n");
+      if(! mqtt.ping()) {
+        Serial.printf("Disconnecting \n");
+        mqtt.disconnect();
+      }
+      last = millis();
+  }
 }
