@@ -36,14 +36,14 @@ Adafruit_MQTT_Publish Batteryvoltage = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME
 
 const float argonRes = 4096.0;
 const float argonVolt = 3.3;
-
 unsigned long lastTime, last;
 unsigned long current = millis();
 float getSoC();
 float getVCell();
 FuelGauge fuel;
-SYSTEM_MODE(SEMI_AUTOMATIC);
 
+SYSTEM_MODE(SEMI_AUTOMATIC);
+SYSTEM_THREAD(ENABLED);
 void setup(){
   Serial.begin(9600);
   Cellular.on();
@@ -51,7 +51,6 @@ void setup(){
   Wire.begin();
   Wire.beginTransmission(0x50);
   Wire.endTransmission(true);
- 
   }
 
 void loop(){
@@ -64,8 +63,7 @@ void loop(){
     sendCarbonLevels();
     lastTime = millis();
     }
-  
-}
+  }
 
 void sendCarbonLevels(){
   Wire.beginTransmission(0x51);
@@ -80,9 +78,9 @@ void sendCarbonLevels(){
   float coPPM = pow(10,-log(RsRo09)+1.48);
   if(mqtt.Update()) {
     CO2.publish(coPPM);
-  }
+    }
   Serial.printf("carbon ppm %.02f \n",coPPM);
-}
+  }
 
  void sendOzoneLevels(){
    //getting MQ131 readings 
@@ -98,9 +96,9 @@ void sendCarbonLevels(){
     float ozonePPM = pow(10.0,-log(RsRoM131)+1.48);
     if(mqtt.Update()){
       Ozone03PPM.publish(ozonePPM);
-}
+      }
     Serial.printf("ozone ppm %.02f \n",ozonePPM);
- }
+    }
 
 void MQTT_connect() {
   int8_t ret;
@@ -115,7 +113,7 @@ void MQTT_connect() {
     delay(5000);  // wait 5 seconds
   }
   Serial.printf("MQTT Connected!\n");
-}
+  }
 
 void getBatteryState(){
    enum batteryState {
